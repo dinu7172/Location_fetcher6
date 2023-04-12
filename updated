@@ -1,0 +1,160 @@
+package com.example.location_fetcher6;
+
+import static androidx.constraintlayout.helper.widget.MotionEffect.TAG;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import android.annotation.SuppressLint;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.os.AsyncTask;
+import android.os.Bundle;
+import android.util.Log;
+import android.widget.TextView;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+
+public class MainActivity extends AppCompatActivity {
+
+    private LocationManager locationManager;
+    public LocationDatabase db ;
+    private RecyclerView recyclerView;
+    private RecyclerViewAdapter recyclerViewAdapter;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+
+        recyclerView = findViewById(R.id.recyclerView);
+        recyclerView.setHasFixedSize(false);
+        recyclerView.setLayoutManager(new LinearLayoutManager(this));
+
+        // Initialize location manager
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        db = LocationDatabase.getInstance(this);
+
+        // Get the Room database instance
+        LocationDao dao = db.locationDao();
+        List<LocationData> locs = dao.getAllLocations();
+
+        recyclerViewAdapter = new RecyclerViewAdapter(locs);
+        recyclerView.setAdapter(recyclerViewAdapter);
+
+        for (LocationData loc : locs) {
+            Log.d("Location Data ("+loc.getId()+")" , "Longitude: " + loc.getLatitude() + ", Latitude: " + loc.getLongitude()+" Timestamp: "+loc.getTimestamp());
+        }
+
+
+
+
+        // Check for location permissions
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            // Request location updates
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 120000, 0, locationListener);
+        } else {
+            // Request location permissions
+            ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION}, 1);
+        }
+    }
+
+    private LocationListener locationListener = new LocationListener() {
+        @Override
+        public void onLocationChanged(Location location) {
+            DateTimeFormatter dtf = null;
+            String formatted = null;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                dtf = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss");
+                LocalDateTime now = LocalDateTime.now();
+                formatted = now.format(dtf);
+            }
+
+
+            // Get user's location
+            String timestamp = formatted;
+            double latitude = location.getLatitude();
+            double longitude = location.getLongitude();
+            LocationDao locationDao = db.locationDao();
+
+            // Create a new LocationData object with the user's latitude and longitude
+            LocationData locationData = new LocationData(latitude, longitude, timestamp);
+            InsertDataTask task = new InsertDataTask(locationDao, locationData);
+            task.execute();
+
+            //list of the location data
+            List<LocationData> locations = locationDao.getAllLocations();
+            // Insert the location data into the database
+//            db.locationDao().insert(locationData);
+            Log.d("LOCATION", "Latitude: " + latitude + ", Longitude: " + longitude + "Timestamp: " + timestamp);
+            Log.d("Size", locations.size() + "");
+        }
+
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) {
+            // Not implemented
+        }
+
+        @Override
+        public void onProviderEnabled(String provider) {
+            // Not implemented
+        }
+
+        @Override
+        public void onProviderDisabled(String provider) {
+            // Not implemented
+        }
+    };
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        switch (requestCode) {
+            case 1:
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED &&
+                        grantResults[1] == PackageManager.PERMISSION_GRANTED) {
+                    // Request location updates
+                    if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                        // TODO: Consider calling
+                        //    ActivityCompat#requestPermissions
+                        // here to request the missing permissions, and then overriding
+                        //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                        //                                          int[] grantResults)
+                        // to handle the case where the user grants the permission. See the documentation
+                        // for ActivityCompat#requestPermissions for more details.
+                        return;
+                    }
+                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 120000, 0, locationListener);
+                }
+                break;
+        }
+    }
+
+class InsertDataTask extends AsyncTask<Void, Void, Void> {
+    private LocationDao locationDao;
+    private LocationData location;
+
+    public InsertDataTask(LocationDao locationDao, LocationData location) {
+        this.locationDao = locationDao;
+        this.location = location;
+    }
+
+    @Override
+    protected Void doInBackground(Void... voids) {
+        locationDao.insert(location);
+        return null;
+    }
+}
+}
